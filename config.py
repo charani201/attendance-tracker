@@ -1,0 +1,1 @@
+EMAIL_ALERT = False
