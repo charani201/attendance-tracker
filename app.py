@@ -32,14 +32,29 @@ if "anomaly_y" not in st.session_state:
 if "anomaly_students" not in st.session_state:
     st.session_state.anomaly_students = []
 
-# ---------- SECTION SELECTION ----------
+# ---------- CSV UPLOAD ----------
 
-section = st.selectbox(
-    "Select Section",
-    ["section_A.csv", "section_B.csv", "section_C.csv", "section_D.csv"]
-)
+uploaded_file = st.file_uploader("📂 Upload Section CSV", type=["csv"])
 
-data = pd.read_csv(section)
+if uploaded_file is None:
+    st.info("Please upload a CSV file to begin.")
+    st.stop()
+
+# Reset simulation and clear old data when a new file is uploaded
+if "last_uploaded" not in st.session_state:
+    st.session_state.last_uploaded = None
+
+if st.session_state.last_uploaded != uploaded_file.name:
+    st.session_state.last_uploaded = uploaded_file.name
+    st.session_state.running = False
+    st.session_state.index = 0
+    st.session_state.x = []
+    st.session_state.y = []
+    st.session_state.anomaly_x = []
+    st.session_state.anomaly_y = []
+    st.session_state.anomaly_students = []
+
+data = pd.read_csv(uploaded_file)
 
 # ---------- CONTROL BUTTONS ----------
 
