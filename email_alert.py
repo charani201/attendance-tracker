@@ -8,8 +8,8 @@ def send_email(parent_email, student_name, attendance):
     if not EMAIL_ALERT:
         return
 
-    sender = "yourmail@gmail.com"
-    password = "----"
+    sender = "charanichowdaryaetukuri@gmail.com"
+    password = "ggrl mxic jzgs pnga"
 
     message = f"""
     Low Attendance Alert

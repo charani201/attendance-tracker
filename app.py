@@ -56,7 +56,7 @@ if st.session_state.last_uploaded != uploaded_file.name:
 
 data = pd.read_csv(uploaded_file)
 
-# ---------- CONTROL BUTTONS ----------
+# ---------- CONTROL BUTTONS + TOGGLES ----------
 
 col1, col2, col3 = st.columns(3)
 
@@ -74,6 +74,11 @@ if col3.button("🔄 Reset"):
     st.session_state.anomaly_x = []
     st.session_state.anomaly_y = []
     st.session_state.anomaly_students = []
+
+# Toggle row below controls
+toggle_col1, toggle_col2, _ = st.columns([1, 1, 2])
+email_enabled = toggle_col1.toggle("📧 Email Alerts", value=True)
+sound_enabled = toggle_col2.toggle("🔔 Sound Alerts", value=True)
 
 # ---------- PLACEHOLDERS ----------
 
@@ -151,27 +156,29 @@ if st.session_state.running and st.session_state.index < len(data):
             f"🚨 ALERT: {row['Student_Name']} attendance = {attendance}%"
         )
 
-        components.html(
-            f"""
-            <script>
-                /* unique token forces Streamlit to re-render: {time.time()} */
-                var ctx = new (window.AudioContext || window.webkitAudioContext)();
-                var oscillator = ctx.createOscillator();
-                var gainNode = ctx.createGain();
-                oscillator.connect(gainNode);
-                gainNode.connect(ctx.destination);
-                oscillator.type = 'sine';
-                oscillator.frequency.setValueAtTime(880, ctx.currentTime);
-                gainNode.gain.setValueAtTime(1, ctx.currentTime);
-                gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-                oscillator.start(ctx.currentTime);
-                oscillator.stop(ctx.currentTime + 0.5);
-            </script>
-            """,
-            height=0
-        )
+        if sound_enabled:
+            components.html(
+                f"""
+                <script>
+                    /* unique token forces Streamlit to re-render: {time.time()} */
+                    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+                    var oscillator = ctx.createOscillator();
+                    var gainNode = ctx.createGain();
+                    oscillator.connect(gainNode);
+                    gainNode.connect(ctx.destination);
+                    oscillator.type = 'sine';
+                    oscillator.frequency.setValueAtTime(880, ctx.currentTime);
+                    gainNode.gain.setValueAtTime(1, ctx.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+                    oscillator.start(ctx.currentTime);
+                    oscillator.stop(ctx.currentTime + 0.5);
+                </script>
+                """,
+                height=0
+            )
 
-        send_email(row["Parent_Email"], row["Student_Name"], attendance)
+        if email_enabled:
+            send_email(row["Parent_Email"], row["Student_Name"], attendance)
 
     st.session_state.index += 1
 
