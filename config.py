@@ -1,1 +1,1 @@
-EMAIL_ALERT = False
+EMAIL_ALERT = True

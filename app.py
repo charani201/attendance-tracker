@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import time
+import threading
 import streamlit.components.v1 as components
 from email_alert import send_email
 
@@ -32,6 +33,9 @@ if "anomaly_y" not in st.session_state:
 if "anomaly_students" not in st.session_state:
     st.session_state.anomaly_students = []
 
+if "play_sound" not in st.session_state:
+    st.session_state.play_sound = False
+
 # ---------- CSV UPLOAD ----------
 
 uploaded_file = st.file_uploader("📂 Upload Section CSV", type=["csv"])
@@ -40,7 +44,6 @@ if uploaded_file is None:
     st.info("Please upload a CSV file to begin.")
     st.stop()
 
-# Reset simulation and clear old data when a new file is uploaded
 if "last_uploaded" not in st.session_state:
     st.session_state.last_uploaded = None
 
@@ -53,6 +56,7 @@ if st.session_state.last_uploaded != uploaded_file.name:
     st.session_state.anomaly_x = []
     st.session_state.anomaly_y = []
     st.session_state.anomaly_students = []
+    st.session_state.play_sound = False
 
 data = pd.read_csv(uploaded_file)
 
@@ -74,11 +78,37 @@ if col3.button("🔄 Reset"):
     st.session_state.anomaly_x = []
     st.session_state.anomaly_y = []
     st.session_state.anomaly_students = []
+    st.session_state.play_sound = False
 
-# Toggle row below controls
 toggle_col1, toggle_col2, _ = st.columns([1, 1, 2])
 email_enabled = toggle_col1.toggle("📧 Email Alerts", value=True)
 sound_enabled = toggle_col2.toggle("🔔 Sound Alerts", value=True)
+
+# ---------- SOUND PLACEHOLDER (fixed position, prevents layout shift) ----------
+
+sound_placeholder = st.empty()
+
+if st.session_state.play_sound and sound_enabled:
+    with sound_placeholder:
+        components.html(
+            f"""
+            <script>
+                var ctx = new (window.AudioContext || window.webkitAudioContext)();
+                var oscillator = ctx.createOscillator();
+                var gainNode = ctx.createGain();
+                oscillator.connect(gainNode);
+                gainNode.connect(ctx.destination);
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(880, ctx.currentTime);
+                gainNode.gain.setValueAtTime(1, ctx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+                oscillator.start(ctx.currentTime);
+                oscillator.stop(ctx.currentTime + 0.5);
+            </script>
+            """,
+            height=0
+        )
+    st.session_state.play_sound = False
 
 # ---------- PLACEHOLDERS ----------
 
@@ -91,7 +121,6 @@ table_placeholder = st.empty()
 def build_figure():
     fig = go.Figure()
 
-    # Attendance line
     fig.add_trace(go.Scatter(
         x=st.session_state.x,
         y=st.session_state.y,
@@ -100,7 +129,6 @@ def build_figure():
         line=dict(color="#1f77b4", width=2)
     ))
 
-    # Anomaly markers
     if st.session_state.anomaly_x:
         fig.add_trace(go.Scatter(
             x=st.session_state.anomaly_x,
@@ -110,7 +138,6 @@ def build_figure():
             marker=dict(color="red", size=10, symbol="circle")
         ))
 
-    # Threshold line
     fig.add_hline(
         y=40,
         line_dash="dash",
@@ -126,11 +153,18 @@ def build_figure():
         height=400,
         margin=dict(l=40, r=40, t=30, b=40),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        # uirevision keeps zoom/pan state stable across reruns — critical for smooth UX
         uirevision="attendance_chart"
     )
 
     return fig
+
+# ---------- RENDER TABLE ----------
+
+def render_table():
+    if st.session_state.anomaly_students:
+        df = pd.DataFrame(st.session_state.anomaly_students)
+        table_placeholder.subheader("🚨 Students With Low Attendance")
+        table_placeholder.dataframe(df, use_container_width=True)
 
 # ---------- SIMULATION STEP ----------
 
@@ -149,7 +183,7 @@ if st.session_state.running and st.session_state.index < len(data):
         st.session_state.anomaly_students.append({
             "Student Name": row["Student_Name"],
             "Parent Email": row["Parent_Email"],
-            "Attendance %": attendance
+            "Attendance %": attendance,
         })
 
         alert_box.warning(
@@ -157,44 +191,24 @@ if st.session_state.running and st.session_state.index < len(data):
         )
 
         if sound_enabled:
-            components.html(
-                f"""
-                <script>
-                    /* unique token forces Streamlit to re-render: {time.time()} */
-                    var ctx = new (window.AudioContext || window.webkitAudioContext)();
-                    var oscillator = ctx.createOscillator();
-                    var gainNode = ctx.createGain();
-                    oscillator.connect(gainNode);
-                    gainNode.connect(ctx.destination);
-                    oscillator.type = 'sine';
-                    oscillator.frequency.setValueAtTime(880, ctx.currentTime);
-                    gainNode.gain.setValueAtTime(1, ctx.currentTime);
-                    gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-                    oscillator.start(ctx.currentTime);
-                    oscillator.stop(ctx.currentTime + 0.5);
-                </script>
-                """,
-                height=0
-            )
+            st.session_state.play_sound = True
 
         if email_enabled:
-            send_email(row["Parent_Email"], row["Student_Name"], attendance)
+            threading.Thread(
+                target=send_email,
+                args=(row["Parent_Email"], row["Student_Name"], attendance),
+                daemon=True
+            ).start()
 
     st.session_state.index += 1
 
-    # Render chart before rerun — stable key prevents widget remount/flicker
     chart_placeholder.plotly_chart(
         build_figure(),
         use_container_width=True,
         key="live_chart"
     )
 
-    if st.session_state.anomaly_students:
-        table_placeholder.subheader("🚨 Students With Low Attendance")
-        table_placeholder.dataframe(
-            pd.DataFrame(st.session_state.anomaly_students),
-            use_container_width=True
-        )
+    render_table()
 
     time.sleep(0.4)
     st.rerun()
@@ -208,9 +222,4 @@ else:
         key="live_chart"
     )
 
-    if st.session_state.anomaly_students:
-        table_placeholder.subheader("🚨 Students With Low Attendance")
-        table_placeholder.dataframe(
-            pd.DataFrame(st.session_state.anomaly_students),
-            use_container_width=True
-        )
+    render_table()
